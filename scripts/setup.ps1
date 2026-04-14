@@ -173,12 +173,23 @@ function Install-Java([int]$minVersion = 21) {
     }
 }
 
+function Resolve-JavaExe {
+    # Returns a working java.exe path: PATH first, then common install locations.
+    $cmd = Get-Command java -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $bin = Find-NewJavaBin
+    if ($bin) {
+        $env:PATH = "$bin;$env:PATH"
+        return "$bin\java.exe"
+    }
+    return $null
+}
+
 function Ensure-Java([int]$minVersion = 21) {
     Write-Step "checking Java (need $minVersion+)..."
 
-    $current = 0
-    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
-    if ($javaCmd) { $current = Get-JavaMajorVersion }
+    $javaExe = Resolve-JavaExe
+    $current  = if ($javaExe) { Get-JavaMajorVersion -javaExe $javaExe } else { 0 }
 
     if ($current -ge $minVersion) {
         Write-Ok "Java $current found."
@@ -186,24 +197,19 @@ function Ensure-Java([int]$minVersion = 21) {
     }
 
     if ($current -gt 0) {
-        Write-Warn "Java $current found but server needs $minVersion+. installing correct version..."
+        Write-Warn "Java $current found but this server needs $minVersion+. installing correct version..."
     } else {
         Write-Warn "Java not found. installing..."
     }
 
     Install-Java -minVersion $minVersion
 
-    # Re-read version using the explicit path in case PATH is still stale
-    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
-    if ($javaCmd) {
-        $current = Get-JavaMajorVersion -javaExe $javaCmd.Source
-    } else {
-        $bin = Find-NewJavaBin
-        if ($bin) { $current = Get-JavaMajorVersion -javaExe "$bin\java.exe" }
-    }
+    # Re-resolve after install (PATH may have changed or bin was injected)
+    $javaExe = Resolve-JavaExe
+    $current  = if ($javaExe) { Get-JavaMajorVersion -javaExe $javaExe } else { 0 }
 
     if ($current -lt $minVersion) {
-        throw "Java $minVersion+ still not on PATH after install. please restart PowerShell and re-run."
+        throw "Java $minVersion+ still not accessible. restart PowerShell and re-run."
     }
     Write-Ok "Java $current ready."
 }
