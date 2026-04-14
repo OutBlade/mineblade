@@ -26,10 +26,11 @@
 
     <div id="cta" class="cta-area">
       <div id="win-cta" class="cta-block hidden">
-        <a href="scripts/setup.ps1" download class="btn">download for windows</a>
-        <p class="cta-hint">
-          right-click the downloaded file &rarr; <strong>Run with PowerShell</strong>
-        </p>
+        <div class="cmd-box">
+          <code id="win-cmd">Set-ExecutionPolicy Bypass -Scope Process -Force; irm https://raw.githubusercontent.com/OutBlade/mineblade/main/scripts/setup.ps1 | iex</code>
+          <button class="copy-btn" onclick="copyCmd('win-cmd')">copy</button>
+        </div>
+        <p class="cta-hint">open <strong>PowerShell</strong> (search it in Start), paste, and press Enter</p>
       </div>
 
       <div id="mac-cta" class="cta-block hidden">

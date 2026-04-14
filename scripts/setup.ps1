@@ -5,9 +5,28 @@
     https://github.com/OutBlade/mineblade
 #>
 
+# ── Self-elevate execution policy so the script always runs ──────────────────
+if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.ScriptName -ne '') {
+    $policy = Get-ExecutionPolicy -Scope Process
+    if ($policy -eq 'Restricted' -or $policy -eq 'AllSigned') {
+        $script = $MyInvocation.MyCommand.Path
+        Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$script`"" -Verb RunAs
+        exit
+    }
+}
+
 Set-StrictMode -Off
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+# ── Global error trap — keeps window open on any failure ─────────────────────
+trap {
+    Write-Host ""
+    Write-Host "  ERROR: $_" -ForegroundColor Red
+    Write-Host ""
+    Read-Host "  Press Enter to close"
+    exit 1
+}
 
 # ── Colours ──────────────────────────────────────────────────────────────────
 function Write-Header {
@@ -299,3 +318,4 @@ Show-PortForwardingInfo
 
 Write-Host "  all done. manage your server at http://localhost:8080" -ForegroundColor Green
 Write-Host ""
+Read-Host "  Press Enter to close"
