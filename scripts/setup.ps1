@@ -79,29 +79,73 @@ function Download-File([string]$url, [string]$dest) {
 }
 
 # ── Java ──────────────────────────────────────────────────────────────────────
+function Get-JavaMajorVersion {
+    try {
+        $raw = & java -version 2>&1 | Select-Object -First 1
+        if ($raw -match '"(\d+)') { return [int]$Matches[1] }
+    } catch {}
+    return 0
+}
+
+function Install-Java {
+    Write-Warn "installing Java via winget..."
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        Write-Fail "winget not available. download Java 21+ from https://adoptium.net and re-run."
+        exit 1
+    }
+
+    # Try packages newest-first so the server can always run
+    $packages = @(
+        "Microsoft.OpenJDK.25",
+        "Microsoft.OpenJDK.24",
+        "Microsoft.OpenJDK.23",
+        "Microsoft.OpenJDK.21",
+        "EclipseAdoptium.Temurin.21.JDK"
+    )
+    $ok = $false
+    foreach ($pkg in $packages) {
+        Write-Info "trying $pkg ..."
+        winget install --id $pkg --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { $ok = $true; Write-Ok "$pkg installed."; break }
+    }
+    if (-not $ok) {
+        Write-Fail "could not auto-install Java. download from https://adoptium.net (Java 21+) and re-run."
+        exit 1
+    }
+
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("PATH","User")
+}
+
 function Ensure-Java {
     Write-Step "checking Java..."
     $java = Get-Command java -ErrorAction SilentlyContinue
+
     if ($java) {
-        $ver = & java -version 2>&1 | Select-String "version" | Select-Object -First 1
-        Write-Ok "Java found: $ver"
-        return
+        $major = Get-JavaMajorVersion
+        if ($major -ge 21) {
+            Write-Ok "Java $major found."
+            return
+        }
+        if ($major -gt 0) {
+            Write-Warn "Java $major is too old (need 21+). upgrading..."
+            Install-Java
+        } else {
+            Write-Warn "Java found but version unreadable. continuing..."
+        }
+    } else {
+        Write-Warn "Java not found."
+        Install-Java
     }
 
-    Write-Warn "Java not found. installing via winget..."
-    $winget = Get-Command winget -ErrorAction SilentlyContinue
-    if (-not $winget) {
-        Write-Fail "winget not available. please install Java 21 manually from https://adoptium.net and re-run this script."
-        exit 1
-    }
-    winget install --id Microsoft.OpenJDK.21 --accept-source-agreements --accept-package-agreements
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
     $java = Get-Command java -ErrorAction SilentlyContinue
     if (-not $java) {
-        Write-Fail "Java installation succeeded but 'java' command not found. please restart PowerShell and re-run."
+        Write-Fail "Java still not on PATH. restart PowerShell and re-run."
         exit 1
     }
-    Write-Ok "Java installed."
+    $major = Get-JavaMajorVersion
+    Write-Ok "Java $major ready."
 }
 
 # ── Version lists ─────────────────────────────────────────────────────────────

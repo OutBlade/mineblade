@@ -64,34 +64,54 @@ download_file() {
 }
 
 # ── Java ──────────────────────────────────────────────────────────────────────
-ensure_java() {
-  step "checking Java..."
-  if command -v java &>/dev/null; then
-    ok "Java found: $(java -version 2>&1 | head -1)"
-    return
-  fi
-  warn "Java not found — installing..."
+java_major_version() {
+  java -version 2>&1 | head -1 | grep -oP '"\K\d+' | head -1
+}
+
+install_java() {
+  warn "installing Java..."
   if [[ "$OS" == "mac" ]]; then
     if command -v brew &>/dev/null; then
-      brew install --quiet openjdk@21
-      sudo ln -sfn "$(brew --prefix)/opt/openjdk@21/libexec/openjdk.jdk" \
-        /Library/Java/JavaVirtualMachines/openjdk-21.jdk 2>/dev/null || true
+      brew install --quiet openjdk || fail "brew install openjdk failed."
+      local prefix; prefix="$(brew --prefix)/opt/openjdk/libexec/openjdk.jdk"
+      sudo ln -sfn "$prefix" /Library/Java/JavaVirtualMachines/openjdk.jdk 2>/dev/null || true
     else
-      fail "Homebrew not found. Install it from https://brew.sh then re-run this script."
+      fail "Homebrew not found. Install it from https://brew.sh then re-run."
     fi
   elif [[ "$OS" == "linux" ]]; then
     if command -v apt-get &>/dev/null; then
       sudo apt-get update -qq && sudo apt-get install -y -qq default-jdk
     elif command -v dnf &>/dev/null; then
-      sudo dnf install -y java-21-openjdk
+      sudo dnf install -y java-latest-openjdk 2>/dev/null || sudo dnf install -y java-21-openjdk
     elif command -v pacman &>/dev/null; then
-      sudo pacman -S --noconfirm jdk21-openjdk
+      sudo pacman -S --noconfirm jdk-openjdk
     else
-      fail "Could not detect package manager. Install Java 21 manually then re-run."
+      fail "Unknown package manager. Install Java 21+ from https://adoptium.net and re-run."
     fi
   fi
   command -v java &>/dev/null || fail "Java installation failed. Install manually from https://adoptium.net"
   ok "Java installed."
+}
+
+ensure_java() {
+  step "checking Java..."
+  if command -v java &>/dev/null; then
+    local major; major=$(java_major_version)
+    if [[ -n "$major" ]] && (( major >= 21 )); then
+      ok "Java $major found."
+      return
+    elif [[ -n "$major" ]]; then
+      warn "Java $major is too old (need 21+). upgrading..."
+      install_java
+    else
+      warn "Java found but version unreadable. continuing..."
+    fi
+  else
+    warn "Java not found."
+    install_java
+  fi
+  local major; major=$(java_major_version)
+  ok "Java $major ready."
 }
 
 # ── Version lists ─────────────────────────────────────────────────────────────
