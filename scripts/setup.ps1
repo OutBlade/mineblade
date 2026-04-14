@@ -87,30 +87,53 @@ function Get-JavaMajorVersion {
     return 0
 }
 
-function Install-Java {
-    Write-Warn "installing Java via winget..."
+# Ask Mojang's manifest what Java version this MC version actually needs.
+# Falls back to 21 if anything goes wrong (safe default).
+function Get-RequiredJavaVersion([string]$mcVersion) {
+    try {
+        Write-Info "checking required Java version for $mcVersion..."
+        $manifest = Invoke-RestMethod "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
+        $entry = $manifest.versions | Where-Object { $_.id -eq $mcVersion } | Select-Object -First 1
+        if (-not $entry) { return 21 }
+        $meta = Invoke-RestMethod $entry.url
+        $required = [int]$meta.javaVersion.majorVersion
+        Write-Info "Minecraft $mcVersion requires Java $required."
+        return $required
+    } catch {
+        Write-Info "could not fetch Java requirement, assuming 21."
+        return 21
+    }
+}
+
+function Install-Java([int]$minVersion = 21) {
+    Write-Warn "installing Java $minVersion+ via winget..."
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if (-not $winget) {
-        Write-Fail "winget not available. download Java 21+ from https://adoptium.net and re-run."
+        Write-Fail "winget not available. download Java $minVersion+ from https://adoptium.net and re-run."
         exit 1
     }
 
-    # Try packages newest-first so the server can always run
-    $packages = @(
-        "Microsoft.OpenJDK.25",
-        "Microsoft.OpenJDK.24",
-        "Microsoft.OpenJDK.23",
-        "Microsoft.OpenJDK.21",
-        "EclipseAdoptium.Temurin.21.JDK"
-    )
+    # Build candidate list: exact version first, then higher, then Adoptium mirrors
+    $candidates = @()
+    foreach ($v in @(30, 29, 28, 27, 26, 25, 24, 23, 22, 21)) {
+        if ($v -ge $minVersion) {
+            $candidates += "Microsoft.OpenJDK.$v"
+        }
+    }
+    foreach ($v in @(30, 29, 28, 27, 26, 25, 24, 23, 22, 21)) {
+        if ($v -ge $minVersion) {
+            $candidates += "EclipseAdoptium.Temurin.$v.JDK"
+        }
+    }
+
     $ok = $false
-    foreach ($pkg in $packages) {
-        Write-Info "trying $pkg ..."
+    foreach ($pkg in $candidates) {
+        Write-Info "trying $pkg..."
         winget install --id $pkg --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) { $ok = $true; Write-Ok "$pkg installed."; break }
     }
     if (-not $ok) {
-        Write-Fail "could not auto-install Java. download from https://adoptium.net (Java 21+) and re-run."
+        Write-Fail "could not auto-install Java $minVersion+. download from https://adoptium.net and re-run."
         exit 1
     }
 
@@ -118,34 +141,33 @@ function Install-Java {
                 [System.Environment]::GetEnvironmentVariable("PATH","User")
 }
 
-function Ensure-Java {
-    Write-Step "checking Java..."
+function Ensure-Java([int]$minVersion = 21) {
+    Write-Step "checking Java (need $minVersion+)..."
     $java = Get-Command java -ErrorAction SilentlyContinue
+    $current = if ($java) { Get-JavaMajorVersion } else { 0 }
 
-    if ($java) {
-        $major = Get-JavaMajorVersion
-        if ($major -ge 21) {
-            Write-Ok "Java $major found."
-            return
-        }
-        if ($major -gt 0) {
-            Write-Warn "Java $major is too old (need 21+). upgrading..."
-            Install-Java
-        } else {
-            Write-Warn "Java found but version unreadable. continuing..."
-        }
-    } else {
-        Write-Warn "Java not found."
-        Install-Java
+    if ($current -ge $minVersion) {
+        Write-Ok "Java $current found — satisfies requirement ($minVersion+)."
+        return
     }
 
-    $java = Get-Command java -ErrorAction SilentlyContinue
-    if (-not $java) {
-        Write-Fail "Java still not on PATH. restart PowerShell and re-run."
+    if ($current -gt 0) {
+        Write-Warn "Java $current is installed but this server needs $minVersion+. installing correct version..."
+    } else {
+        Write-Warn "Java not found. installing..."
+    }
+
+    Install-Java -minVersion $minVersion
+
+    # Refresh PATH and re-check
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("PATH","User")
+    $current = Get-JavaMajorVersion
+    if ($current -lt $minVersion) {
+        Write-Fail "Java $minVersion+ still not available after install. restart PowerShell and re-run."
         exit 1
     }
-    $major = Get-JavaMajorVersion
-    Write-Ok "Java $major ready."
+    Write-Ok "Java $current ready."
 }
 
 # ── Version lists ─────────────────────────────────────────────────────────────
@@ -290,7 +312,6 @@ function Show-PortForwardingInfo {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 Write-Header
-Ensure-Java
 
 # Server directory
 $serverDir = "$env:USERPROFILE\mineblade-server"
@@ -324,6 +345,10 @@ switch ($typeIdx) {
         $mcVersion = $versions[$vIdx]
     }
 }
+
+# Java — checked AFTER version selection so we know the exact requirement
+$requiredJava = Get-RequiredJavaVersion $mcVersion
+Ensure-Java -minVersion $requiredJava
 
 # RAM
 $totalRamMb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB)

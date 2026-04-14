@@ -65,28 +65,52 @@ download_file() {
 
 # ── Java ──────────────────────────────────────────────────────────────────────
 java_major_version() {
-  java -version 2>&1 | head -1 | grep -oP '"\K\d+' | head -1
+  java -version 2>&1 | head -1 | grep -oE '"[0-9]+' | tr -d '"' | head -1
+}
+
+# Ask Mojang's manifest what Java version this MC version actually needs.
+get_required_java_version() {
+  local mc_version="$1"
+  info "checking required Java version for $mc_version..."
+  local required
+  required=$(curl -sSL "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json" \
+    | python3 -c "
+import json, sys, urllib.request
+data = json.load(sys.stdin)
+entry = next((v for v in data['versions'] if v['id'] == '$mc_version'), None)
+if not entry:
+    print(21); sys.exit(0)
+meta = json.loads(urllib.request.urlopen(entry['url']).read())
+print(meta.get('javaVersion', {}).get('majorVersion', 21))
+" 2>/dev/null) || required=21
+  info "Minecraft $mc_version requires Java $required."
+  echo "$required"
 }
 
 install_java() {
-  warn "installing Java..."
+  local min_version="${1:-21}"
+  warn "installing Java $min_version+..."
   if [[ "$OS" == "mac" ]]; then
     if command -v brew &>/dev/null; then
       brew install --quiet openjdk || fail "brew install openjdk failed."
       local prefix; prefix="$(brew --prefix)/opt/openjdk/libexec/openjdk.jdk"
       sudo ln -sfn "$prefix" /Library/Java/JavaVirtualMachines/openjdk.jdk 2>/dev/null || true
     else
-      fail "Homebrew not found. Install it from https://brew.sh then re-run."
+      fail "Homebrew not found. Install from https://brew.sh then re-run."
     fi
   elif [[ "$OS" == "linux" ]]; then
     if command -v apt-get &>/dev/null; then
-      sudo apt-get update -qq && sudo apt-get install -y -qq default-jdk
+      sudo apt-get update -qq
+      # Try exact version first, fall back to default-jdk
+      sudo apt-get install -y -qq "openjdk-${min_version}-jdk" 2>/dev/null \
+        || sudo apt-get install -y -qq default-jdk
     elif command -v dnf &>/dev/null; then
-      sudo dnf install -y java-latest-openjdk 2>/dev/null || sudo dnf install -y java-21-openjdk
+      sudo dnf install -y "java-${min_version}-openjdk" 2>/dev/null \
+        || sudo dnf install -y java-latest-openjdk
     elif command -v pacman &>/dev/null; then
       sudo pacman -S --noconfirm jdk-openjdk
     else
-      fail "Unknown package manager. Install Java 21+ from https://adoptium.net and re-run."
+      fail "Unknown package manager. Install Java $min_version+ from https://adoptium.net and re-run."
     fi
   fi
   command -v java &>/dev/null || fail "Java installation failed. Install manually from https://adoptium.net"
@@ -94,24 +118,31 @@ install_java() {
 }
 
 ensure_java() {
-  step "checking Java..."
+  local min_version="${1:-21}"
+  step "checking Java (need $min_version+)..."
+  local current=0
   if command -v java &>/dev/null; then
-    local major; major=$(java_major_version)
-    if [[ -n "$major" ]] && (( major >= 21 )); then
-      ok "Java $major found."
-      return
-    elif [[ -n "$major" ]]; then
-      warn "Java $major is too old (need 21+). upgrading..."
-      install_java
-    else
-      warn "Java found but version unreadable. continuing..."
-    fi
+    current=$(java_major_version)
+  fi
+
+  if [[ -n "$current" ]] && (( current >= min_version )); then
+    ok "Java $current found — satisfies requirement ($min_version+)."
+    return
+  fi
+
+  if (( current > 0 )); then
+    warn "Java $current is installed but this server needs $min_version+. installing correct version..."
   else
     warn "Java not found."
-    install_java
   fi
-  local major; major=$(java_major_version)
-  ok "Java $major ready."
+
+  install_java "$min_version"
+
+  current=$(java_major_version)
+  if (( current < min_version )); then
+    fail "Java $min_version+ still not available. restart your shell and re-run."
+  fi
+  ok "Java $current ready."
 }
 
 # ── Version lists ─────────────────────────────────────────────────────────────
@@ -267,7 +298,6 @@ show_port_forwarding() {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 print_header
-ensure_java
 
 SERVER_DIR="$HOME/mineblade-server"
 mkdir -p "$SERVER_DIR"
@@ -286,6 +316,10 @@ esac
 
 prompt_choice "Minecraft version:" "${VERSIONS[@]}"
 MC_VERSION="${VERSIONS[$CHOICE]}"
+
+# Java — checked AFTER version selection so we know the exact requirement
+REQUIRED_JAVA=$(get_required_java_version "$MC_VERSION")
+ensure_java "$REQUIRED_JAVA"
 
 # RAM
 TOTAL_KB=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || sysctl -n hw.memsize 2>/dev/null | awk '{print int($1/1024)}' || echo 4194304)
