@@ -79,19 +79,42 @@ function Download-File([string]$url, [string]$dest) {
 }
 
 # ── Java ──────────────────────────────────────────────────────────────────────
-function Get-JavaMajorVersion {
+
+# Run java -version using an explicit path or whatever is on PATH.
+function Get-JavaMajorVersion([string]$javaExe = "java") {
     try {
-        $raw = & java -version 2>&1 | Select-Object -First 1
+        $raw = & $javaExe -version 2>&1 | Select-Object -First 1
         if ($raw -match '"(\d+)') { return [int]$Matches[1] }
     } catch {}
     return 0
 }
 
-# Ask Mojang's manifest what Java version this MC version actually needs.
-# Falls back to 21 if anything goes wrong (safe default).
+# After winget installs a JDK the current session's PATH is stale.
+# Search known install locations and return the bin directory if found.
+function Find-NewJavaBin {
+    $patterns = @(
+        "$env:ProgramFiles\Microsoft\jdk-*\bin",
+        "$env:ProgramFiles\Eclipse Adoptium\jdk-*\bin",
+        "$env:ProgramFiles\Eclipse Adoptium\jre-*\bin",
+        "$env:ProgramFiles\Java\jdk*\bin",
+        "$env:ProgramFiles\OpenJDK\jdk-*\bin",
+        "$env:ProgramFiles\BellSoft\LibericaJDK-*-Full\bin"
+    )
+    foreach ($pattern in $patterns) {
+        $found = Get-Item $pattern -ErrorAction SilentlyContinue |
+                 Sort-Object Name -Descending |
+                 Where-Object { Test-Path "$($_.FullName)\java.exe" } |
+                 Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    return $null
+}
+
+# Ask Mojang what Java version this MC version actually requires.
+# Falls back to 21 if the lookup fails.
 function Get-RequiredJavaVersion([string]$mcVersion) {
     try {
-        Write-Info "checking required Java version for $mcVersion..."
+        Write-Info "checking Java requirement for Minecraft $mcVersion..."
         $manifest = Invoke-RestMethod "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
         $entry = $manifest.versions | Where-Object { $_.id -eq $mcVersion } | Select-Object -First 1
         if (-not $entry) { return 21 }
@@ -109,63 +132,78 @@ function Install-Java([int]$minVersion = 21) {
     Write-Warn "installing Java $minVersion+ via winget..."
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if (-not $winget) {
-        Write-Fail "winget not available. download Java $minVersion+ from https://adoptium.net and re-run."
-        exit 1
+        throw "winget not available. download Java $minVersion+ from https://adoptium.net and re-run."
     }
 
-    # Build candidate list: exact version first, then higher, then Adoptium mirrors
     $candidates = @()
     foreach ($v in @(30, 29, 28, 27, 26, 25, 24, 23, 22, 21)) {
-        if ($v -ge $minVersion) {
-            $candidates += "Microsoft.OpenJDK.$v"
-        }
+        if ($v -ge $minVersion) { $candidates += "Microsoft.OpenJDK.$v" }
     }
     foreach ($v in @(30, 29, 28, 27, 26, 25, 24, 23, 22, 21)) {
-        if ($v -ge $minVersion) {
-            $candidates += "EclipseAdoptium.Temurin.$v.JDK"
-        }
+        if ($v -ge $minVersion) { $candidates += "EclipseAdoptium.Temurin.$v.JDK" }
     }
 
-    $ok = $false
+    $installed = $false
     foreach ($pkg in $candidates) {
         Write-Info "trying $pkg..."
         winget install --id $pkg --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { $ok = $true; Write-Ok "$pkg installed."; break }
+        # 0 = success, -1978335135 = already installed — both are fine
+        if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335135) {
+            Write-Ok "$pkg installed."
+            $installed = $true
+            break
+        }
     }
-    if (-not $ok) {
-        Write-Fail "could not auto-install Java $minVersion+. download from https://adoptium.net and re-run."
-        exit 1
+    if (-not $installed) {
+        throw "could not auto-install Java $minVersion+. download from https://adoptium.net and re-run."
     }
 
+    # Refresh PATH from registry
     $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
                 [System.Environment]::GetEnvironmentVariable("PATH","User")
+
+    # winget PATH updates don't always apply to the current session.
+    # Scan known install locations and inject the bin dir if java is still not found.
+    if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
+        $bin = Find-NewJavaBin
+        if ($bin) {
+            Write-Info "adding $bin to session PATH."
+            $env:PATH = "$bin;$env:PATH"
+        }
+    }
 }
 
 function Ensure-Java([int]$minVersion = 21) {
     Write-Step "checking Java (need $minVersion+)..."
-    $java = Get-Command java -ErrorAction SilentlyContinue
-    $current = if ($java) { Get-JavaMajorVersion } else { 0 }
+
+    $current = 0
+    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
+    if ($javaCmd) { $current = Get-JavaMajorVersion }
 
     if ($current -ge $minVersion) {
-        Write-Ok "Java $current found — satisfies requirement ($minVersion+)."
+        Write-Ok "Java $current found."
         return
     }
 
     if ($current -gt 0) {
-        Write-Warn "Java $current is installed but this server needs $minVersion+. installing correct version..."
+        Write-Warn "Java $current found but server needs $minVersion+. installing correct version..."
     } else {
         Write-Warn "Java not found. installing..."
     }
 
     Install-Java -minVersion $minVersion
 
-    # Refresh PATH and re-check
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("PATH","User")
-    $current = Get-JavaMajorVersion
+    # Re-read version using the explicit path in case PATH is still stale
+    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
+    if ($javaCmd) {
+        $current = Get-JavaMajorVersion -javaExe $javaCmd.Source
+    } else {
+        $bin = Find-NewJavaBin
+        if ($bin) { $current = Get-JavaMajorVersion -javaExe "$bin\java.exe" }
+    }
+
     if ($current -lt $minVersion) {
-        Write-Fail "Java $minVersion+ still not available after install. restart PowerShell and re-run."
-        exit 1
+        throw "Java $minVersion+ still not on PATH after install. please restart PowerShell and re-run."
     }
     Write-Ok "Java $current ready."
 }
