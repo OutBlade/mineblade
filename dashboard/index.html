@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mineblade dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111;
+      --border: #1e1e1e;
+      --text: #f0f0f0;
+      --muted: #666;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      height: 28px;
+      width: auto;
+    }
+
+    .brand-suffix {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+
+    .status-dot.online  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.offline { background: var(--red); }
+
+    main {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      grid-template-rows: auto 1fr;
+      height: calc(100vh - 57px);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .stat-block { display: flex; flex-direction: column; gap: 4px; }
+
+    .stat-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .stat-value.green { color: var(--green); }
+    .stat-value.red   { color: var(--red); }
+
+    .controls { display: flex; flex-direction: column; gap: 8px; }
+
+    .btn {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: opacity 0.15s;
+    }
+
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    .btn:not(:disabled):hover { opacity: 0.8; }
+
+    .btn-start { background: var(--green); color: #000; }
+    .btn-stop  { background: var(--red);   color: #fff; }
+
+    .info-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .info-block strong { color: var(--text); font-weight: 600; }
+
+    .console-wrap {
+      display: flex;
+      flex-direction: column;
+      grid-column: 2;
+      grid-row: 1 / 3;
+    }
+
+    .console-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .autoscroll-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--muted);
+    }
+
+    .autoscroll-toggle input { cursor: pointer; }
+
+    #console {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #c8c8c8;
+    }
+
+    #console::-webkit-scrollbar { width: 6px; }
+    #console::-webkit-scrollbar-track { background: transparent; }
+    #console::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .log-line { white-space: pre-wrap; word-break: break-all; }
+    .log-line.warn  { color: var(--yellow); }
+    .log-line.error { color: var(--red); }
+    .log-line.info  { color: #60a5fa; }
+    .log-line.meta  { color: var(--green); opacity: 0.8; }
+
+    @media (max-width: 700px) {
+      main { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--border); padding: 16px; flex-direction: row; flex-wrap: wrap; gap: 16px; }
+      .console-wrap { grid-column: 1; grid-row: 3; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160">
+      <rect width="560" height="160" fill="#000"/>
+      <defs>
+        <clipPath id="bc">
+          <polygon points="0,0 560,0 560,88 440,72 0,80"/>
+          <polygon points="0,100 320,92 560,108 560,160 0,160"/>
+        </clipPath>
+      </defs>
+      <text x="28" y="128" font-family="Arial Black,Impact,sans-serif" font-size="118"
+            font-weight="900" font-style="italic" fill="white" clip-path="url(#bc)" letter-spacing="-2">BLADE</text>
+    </svg>
+    <span class="brand-suffix">mine</span>
+  </div>
+  <div class="status-pill">
+    <span class="status-dot offline" id="status-dot"></span>
+    <span id="status-text">offline</span>
+  </div>
+</header>
+
+<main>
+  <aside class="sidebar">
+    <div class="stat-block">
+      <span class="stat-label">players online</span>
+      <span class="stat-value" id="player-count">0</span>
+    </div>
+
+    <div class="stat-block">
+      <span class="stat-label">status</span>
+      <span class="stat-value red" id="status-big">offline</span>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-start" id="btn-start" onclick="startServer()">start server</button>
+      <button class="btn btn-stop"  id="btn-stop"  onclick="stopServer()" disabled>stop server</button>
+    </div>
+
+    <div class="info-block" id="info-block">
+      <strong>port</strong> 25565<br>
+      <strong>ram</strong> <span id="info-ram">...</span><br>
+      <strong>dir</strong> <span id="info-dir" style="font-size:10px;word-break:break-all">...</span>
+    </div>
+  </aside>
+
+  <div class="console-wrap">
+    <div class="console-toolbar">
+      <span>console</span>
+      <label class="autoscroll-toggle">
+        <input type="checkbox" id="autoscroll" checked> autoscroll
+      </label>
+    </div>
+    <div id="console"></div>
+  </div>
+</main>
+
+<script>
+  let knownLines = 0;
+  let running = false;
+
+  function classifyLine(line) {
+    if (/\[mineblade\]/.test(line)) return 'meta';
+    if (/WARN|Warning/.test(line))  return 'warn';
+    if (/ERROR|Exception|FATAL/.test(line)) return 'error';
+    if (/INFO/.test(line))          return 'info';
+    return '';
+  }
+
+  function appendLogs(lines) {
+    const console_ = document.getElementById('console');
+    const autoscroll = document.getElementById('autoscroll').checked;
+    const frag = document.createDocumentFragment();
+    lines.forEach(line => {
+      const el = document.createElement('div');
+      el.className = 'log-line ' + classifyLine(line);
+      el.textContent = line;
+      frag.appendChild(el);
+    });
+    console_.appendChild(frag);
+    if (autoscroll) console_.scrollTop = console_.scrollHeight;
+  }
+
+  async function fetchStatus() {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      running = data.running;
+
+      document.getElementById('player-count').textContent = data.players;
+      document.getElementById('info-ram').textContent = data.ram_mb + ' MB';
+      document.getElementById('info-dir').textContent = data.server_dir;
+
+      const dot  = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      const big  = document.getElementById('status-big');
+      if (running) {
+        dot.className  = 'status-dot online';
+        text.textContent = 'online';
+        big.textContent  = 'online';
+        big.className    = 'stat-value green';
+      } else {
+        dot.className  = 'status-dot offline';
+        text.textContent = 'offline';
+        big.textContent  = 'offline';
+        big.className    = 'stat-value red';
+      }
+
+      document.getElementById('btn-start').disabled = running;
+      document.getElementById('btn-stop').disabled  = !running;
+    } catch (_) {}
+  }
+
+  async function fetchLogs() {
+    try {
+      const res = await fetch('/api/logs');
+      const data = await res.json();
+      const newLines = data.logs.slice(knownLines);
+      if (newLines.length) {
+        appendLogs(newLines);
+        knownLines = data.logs.length;
+      }
+    } catch (_) {}
+  }
+
+  async function startServer() {
+    document.getElementById('btn-start').disabled = true;
+    await fetch('/api/start');
+    await fetchStatus();
+    await fetchLogs();
+  }
+
+  async function stopServer() {
+    document.getElementById('btn-stop').disabled = true;
+    await fetch('/api/stop');
+    await fetchStatus();
+  }
+
+  async function tick() {
+    await fetchStatus();
+    await fetchLogs();
+  }
+
+  tick();
+  setInterval(tick, 2000);
+</script>
+</body>
+</html>

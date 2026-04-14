@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" width="560" height="160">
+  <rect width="560" height="160" fill="#000"/>
+  <defs>
+    <clipPath id="blade-cut">
+      <polygon points="0,0 560,0 560,88 440,72 0,80"/>
+      <polygon points="0,100 320,92 560,108 560,160 0,160"/>
+    </clipPath>
+  </defs>
+  <text
+    x="28"
+    y="128"
+    font-family="Arial Black, Impact, 'Franklin Gothic Heavy', sans-serif"
+    font-size="118"
+    font-weight="900"
+    font-style="italic"
+    fill="white"
+    clip-path="url(#blade-cut)"
+    letter-spacing="-2"
+  >BLADE</text>
+</svg>

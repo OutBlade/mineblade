@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mineblade — free minecraft server in seconds</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <main>
+    <div class="logo-wrap">
+      <img src="assets/logo.svg" alt="BLADE" class="logo">
+      <span class="product-suffix">mine</span>
+    </div>
+
+    <p class="tagline">
+      free minecraft server for you and your friends.<br>
+      no account. no credit card. runs on your machine.
+    </p>
+
+    <ol class="steps">
+      <li>download the script</li>
+      <li>run it once</li>
+      <li>share your IP</li>
+    </ol>
+
+    <div id="cta" class="cta-area">
+      <div id="win-cta" class="cta-block hidden">
+        <a href="scripts/setup.ps1" download class="btn">download for windows</a>
+        <p class="cta-hint">
+          right-click the downloaded file &rarr; <strong>Run with PowerShell</strong>
+        </p>
+      </div>
+
+      <div id="mac-cta" class="cta-block hidden">
+        <div class="cmd-box">
+          <code id="mac-cmd">curl -sSL https://raw.githubusercontent.com/OutBlade/mineblade/main/scripts/setup.sh | bash</code>
+          <button class="copy-btn" onclick="copyCmd('mac-cmd')">copy</button>
+        </div>
+        <p class="cta-hint">paste into Terminal and press Enter</p>
+      </div>
+
+      <div id="linux-cta" class="cta-block hidden">
+        <div class="cmd-box">
+          <code id="linux-cmd">curl -sSL https://raw.githubusercontent.com/OutBlade/mineblade/main/scripts/setup.sh | bash</code>
+          <button class="copy-btn" onclick="copyCmd('linux-cmd')">copy</button>
+        </div>
+        <p class="cta-hint">paste into your terminal and press Enter</p>
+      </div>
+
+      <div id="unknown-cta" class="cta-block hidden">
+        <a href="scripts/setup.ps1" download class="btn secondary">windows script</a>
+        <a href="scripts/setup.sh" download class="btn secondary">mac / linux script</a>
+      </div>
+    </div>
+
+    <div class="what-it-does">
+      <p>the script installs Java if needed, downloads your chosen server (Vanilla, Paper, Fabric, or Forge), configures everything, and opens a local dashboard at <strong>localhost:8080</strong> to manage it.</p>
+    </div>
+
+    <footer>
+      <a href="https://github.com/OutBlade/mineblade" target="_blank">github</a>
+      <span class="dot">·</span>
+      <span>by <a href="https://github.com/OutBlade" target="_blank">OutBlade</a></span>
+    </footer>
+  </main>
+  <script src="assets/main.js"></script>
+</body>
+</html>
