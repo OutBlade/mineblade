@@ -89,26 +89,49 @@ function Get-JavaMajorVersion([string]$javaExe = "java") {
     return 0
 }
 
-# Search common JDK install locations and return the bin dir of the newest found.
-# Uses Get-ChildItem per base dir — more reliable than Get-Item with mid-path wildcards.
+# Find a java.exe that is installed but not yet on PATH.
+# Checks the Windows registry first (most reliable), then falls back to file scan.
 function Find-NewJavaBin {
+    # Registry: JDK installers always write their path here
+    $regBases = @(
+        'HKLM:\SOFTWARE\Eclipse Adoptium\JDK',
+        'HKLM:\SOFTWARE\Eclipse Foundation\JDK',
+        'HKLM:\SOFTWARE\AdoptOpenJDK\JDK',
+        'HKLM:\SOFTWARE\JavaSoft\JDK',
+        'HKLM:\SOFTWARE\Microsoft\JDK'
+    )
+    foreach ($regBase in $regBases) {
+        if (-not (Test-Path $regBase)) { continue }
+        $versions = Get-ChildItem $regBase -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+        foreach ($ver in $versions) {
+            $msi = Get-ChildItem $ver.PSPath -Recurse -ErrorAction SilentlyContinue |
+                   Where-Object { $_.PSChildName -eq 'MSI' } | Select-Object -First 1
+            if ($msi) {
+                $installPath = (Get-ItemProperty $msi.PSPath -ErrorAction SilentlyContinue).Path
+                if ($installPath) {
+                    $bin = Join-Path $installPath.TrimEnd('\') 'bin'
+                    if (Test-Path (Join-Path $bin 'java.exe')) { return $bin }
+                }
+            }
+        }
+    }
+
+    # Fallback: scan common install directories
     $bases = @(
         "$env:ProgramFiles\Eclipse Adoptium",
         "$env:ProgramFiles\Microsoft",
         "$env:ProgramFiles\Java",
         "$env:ProgramFiles\OpenJDK",
-        "$env:ProgramFiles\BellSoft",
-        "$env:LOCALAPPDATA\Programs\Eclipse Adoptium",
-        "$env:LOCALAPPDATA\Programs\Microsoft"
+        "$env:ProgramFiles\BellSoft"
     )
     foreach ($base in $bases) {
         if (-not (Test-Path $base)) { continue }
         $found = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue |
                  Where-Object { $_.Name -match '^(jdk|jre)' } |
                  Sort-Object Name -Descending |
-                 Where-Object { Test-Path (Join-Path $_.FullName "bin\java.exe") } |
+                 Where-Object { Test-Path (Join-Path $_.FullName 'bin\java.exe') } |
                  Select-Object -First 1
-        if ($found) { return (Join-Path $found.FullName "bin") }
+        if ($found) { return (Join-Path $found.FullName 'bin') }
     }
     return $null
 }
