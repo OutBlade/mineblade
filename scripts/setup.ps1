@@ -200,14 +200,35 @@ function Install-Java([int]$minVersion = 21) {
 }
 
 function Resolve-JavaExe {
-    # Returns a working java.exe path: PATH first, then common install locations.
+    # 1. Current session PATH (fast path)
     $cmd = Get-Command java -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
-    $bin = Find-NewJavaBin
-    if ($bin) {
-        $env:PATH = "$bin;$env:PATH"
-        return "$bin\java.exe"
+
+    # 2. System + User PATH from registry — updated by installers, but stale in current session
+    $sysPaths = (([System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+                  [System.Environment]::GetEnvironmentVariable("PATH", "User")) -split ";") |
+                 Where-Object { $_ -ne "" }
+    foreach ($p in $sysPaths) {
+        $j = Join-Path $p "java.exe"
+        if (Test-Path $j) {
+            $env:PATH = "$p;$env:PATH"
+            return $j
+        }
     }
+
+    # 3. JAVA_HOME environment variable
+    foreach ($scope in @("Machine", "User")) {
+        $home = [System.Environment]::GetEnvironmentVariable("JAVA_HOME", $scope)
+        if ($home) {
+            $j = Join-Path $home.TrimEnd("\") "bin\java.exe"
+            if (Test-Path $j) { $env:PATH = "$(Split-Path $j -Parent);$env:PATH"; return $j }
+        }
+    }
+
+    # 4. Registry JDK key scan (last resort)
+    $bin = Find-NewJavaBin
+    if ($bin) { $env:PATH = "$bin;$env:PATH"; return "$bin\java.exe" }
+
     return $null
 }
 
