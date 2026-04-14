@@ -89,23 +89,26 @@ function Get-JavaMajorVersion([string]$javaExe = "java") {
     return 0
 }
 
-# After winget installs a JDK the current session's PATH is stale.
-# Search known install locations and return the bin directory if found.
+# Search common JDK install locations and return the bin dir of the newest found.
+# Uses Get-ChildItem per base dir — more reliable than Get-Item with mid-path wildcards.
 function Find-NewJavaBin {
-    $patterns = @(
-        "$env:ProgramFiles\Microsoft\jdk-*\bin",
-        "$env:ProgramFiles\Eclipse Adoptium\jdk-*\bin",
-        "$env:ProgramFiles\Eclipse Adoptium\jre-*\bin",
-        "$env:ProgramFiles\Java\jdk*\bin",
-        "$env:ProgramFiles\OpenJDK\jdk-*\bin",
-        "$env:ProgramFiles\BellSoft\LibericaJDK-*-Full\bin"
+    $bases = @(
+        "$env:ProgramFiles\Eclipse Adoptium",
+        "$env:ProgramFiles\Microsoft",
+        "$env:ProgramFiles\Java",
+        "$env:ProgramFiles\OpenJDK",
+        "$env:ProgramFiles\BellSoft",
+        "$env:LOCALAPPDATA\Programs\Eclipse Adoptium",
+        "$env:LOCALAPPDATA\Programs\Microsoft"
     )
-    foreach ($pattern in $patterns) {
-        $found = Get-Item $pattern -ErrorAction SilentlyContinue |
+    foreach ($base in $bases) {
+        if (-not (Test-Path $base)) { continue }
+        $found = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -match '^(jdk|jre)' } |
                  Sort-Object Name -Descending |
-                 Where-Object { Test-Path "$($_.FullName)\java.exe" } |
+                 Where-Object { Test-Path (Join-Path $_.FullName "bin\java.exe") } |
                  Select-Object -First 1
-        if ($found) { return $found.FullName }
+        if ($found) { return (Join-Path $found.FullName "bin") }
     }
     return $null
 }
