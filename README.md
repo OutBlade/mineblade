@@ -1,5 +1,7 @@
 # mineblade
 
+[![mineblade](assets/screenshot.png)](https://outblade.github.io/mineblade/)
+
 **free minecraft server for you and your friends — runs on your machine, set up in one command.**
 
 no account. no credit card. no cloud. just download the script and play.
