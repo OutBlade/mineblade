@@ -398,26 +398,36 @@ function Install-Dashboard([string]$dir) {
 function Stop-ExistingDashboard {
     # Kill anything still holding port 8080 - usually a dashboard from a previous run
     # with stale code. Also kill any orphaned java.exe running the minecraft server.
+    # NOTE: cannot use $pid as a loop variable - it's a PowerShell automatic variable
+    # containing the current process ID and assignment to it silently fails.
     try {
-        $owners = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
-                  Select-Object -ExpandProperty OwningProcess -Unique
-        foreach ($pid in $owners) {
+        $owners = @(Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty OwningProcess -Unique)
+        foreach ($ownerPid in $owners) {
             try {
-                $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
-                if ($proc) {
-                    Write-Info "stopping old dashboard (PID $pid, $($proc.ProcessName))..."
-                    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                $proc = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
+                $pname = if ($proc) { $proc.ProcessName } else { "unknown" }
+                Write-Info "stopping old dashboard (PID $ownerPid, $pname)..."
+                # Stop-Process fails with Zugriff verweigert if the target ran elevated;
+                # fall back to taskkill which honours the current token better.
+                Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue
+                if (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue) {
+                    & taskkill /F /PID $ownerPid 2>&1 | Out-Null
                 }
             } catch {}
         }
     } catch {}
 
-    # Kill any java.exe that was started by the old dashboard for our server.jar
+    # Kill any java.exe started by an old dashboard for our server.jar
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -eq 'java.exe' -and $_.CommandLine -match 'mineblade-server.*server\.jar' } |
         ForEach-Object {
-            Write-Info "stopping orphaned server java.exe (PID $($_.ProcessId))..."
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            $jpid = $_.ProcessId
+            Write-Info "stopping orphaned server java.exe (PID $jpid)..."
+            Stop-Process -Id $jpid -Force -ErrorAction SilentlyContinue
+            if (Get-Process -Id $jpid -ErrorAction SilentlyContinue) {
+                & taskkill /F /PID $jpid 2>&1 | Out-Null
+            }
         }
 
     Start-Sleep -Milliseconds 500
