@@ -402,6 +402,13 @@ function Show-PortForwardingInfo {
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
+# Refresh session PATH from registry — picks up apps installed after this session started.
+# This is why java installed via winget is invisible until you restart PowerShell.
+$env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+            [System.Environment]::GetEnvironmentVariable("PATH","User") + ";" +
+            $env:PATH
+
 Write-Header
 
 # Server directory
