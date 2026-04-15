@@ -395,8 +395,39 @@ function Install-Dashboard([string]$dir) {
     Write-Ok "dashboard installed."
 }
 
+function Stop-ExistingDashboard {
+    # Kill anything still holding port 8080 - usually a dashboard from a previous run
+    # with stale code. Also kill any orphaned java.exe running the minecraft server.
+    try {
+        $owners = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+                  Select-Object -ExpandProperty OwningProcess -Unique
+        foreach ($pid in $owners) {
+            try {
+                $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                if ($proc) {
+                    Write-Info "stopping old dashboard (PID $pid, $($proc.ProcessName))..."
+                    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                }
+            } catch {}
+        }
+    } catch {}
+
+    # Kill any java.exe that was started by the old dashboard for our server.jar
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'java.exe' -and $_.CommandLine -match 'mineblade-server.*server\.jar' } |
+        ForEach-Object {
+            Write-Info "stopping orphaned server java.exe (PID $($_.ProcessId))..."
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+
+    Start-Sleep -Milliseconds 500
+}
+
 function Start-Dashboard([string]$dir, [int]$ramMb) {
     Write-Step "starting dashboard at http://localhost:8080 ..."
+
+    Stop-ExistingDashboard
+
     $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
     if (-not $pythonCmd) { $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue }
     if (-not $pythonCmd) {
@@ -486,6 +517,12 @@ switch ($typeIdx) {
 # Java - checked AFTER version selection so we know the exact requirement
 $requiredJava = Get-RequiredJavaVersion $mcVersion
 Ensure-Java -minVersion $requiredJava
+
+# Persist the resolved Java path so the dashboard uses the exact same exe.
+# This is more reliable than env var inheritance through Start-Process.
+if ($script:JavaExe) {
+    Set-Content -Path "$serverDir\java.txt" -Value $script:JavaExe -Encoding ASCII
+}
 
 # RAM
 $totalRamMb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB)

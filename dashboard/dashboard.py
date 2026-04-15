@@ -35,7 +35,18 @@ def _java_version(exe):
 
 def find_best_java():
     """Return the path to the highest-version java.exe available."""
-    # 1. Explicit override set by setup script
+    # 1. Explicit pin written by setup.ps1 - most reliable
+    pin_file = os.path.join(SERVER_DIR, "java.txt")
+    if os.path.isfile(pin_file):
+        try:
+            with open(pin_file, "r", encoding="utf-8") as f:
+                pinned = f.read().strip()
+            if pinned and os.path.isfile(pinned):
+                return pinned
+        except Exception:
+            pass
+
+    # 2. Env var fallback (less reliable across Start-Process boundaries)
     from_env = os.environ.get("MINEBLADE_JAVA_EXE", "")
     if from_env and os.path.isfile(from_env):
         return from_env
