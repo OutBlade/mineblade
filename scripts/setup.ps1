@@ -1,11 +1,11 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    mineblade — instant Minecraft server setup for Windows
+    mineblade - instant Minecraft server setup for Windows
     https://github.com/OutBlade/mineblade
 #>
 
-# ── Self-elevate execution policy so the script always runs ──────────────────
+# -- Self-elevate execution policy so the script always runs ------------------
 if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.ScriptName -ne '') {
     $policy = Get-ExecutionPolicy -Scope Process
     if ($policy -eq 'Restricted' -or $policy -eq 'AllSigned') {
@@ -19,7 +19,7 @@ Set-StrictMode -Off
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# ── Global error trap — keeps window open on any failure ─────────────────────
+# -- Global error trap - keeps window open on any failure ---------------------
 trap {
     Write-Host ""
     Write-Host "  ERROR: $_" -ForegroundColor Red
@@ -28,7 +28,7 @@ trap {
     exit 1
 }
 
-# ── Colours ──────────────────────────────────────────────────────────────────
+# -- Colours ------------------------------------------------------------------
 function Write-Header {
     Clear-Host
     Write-Host ""
@@ -57,7 +57,7 @@ function Write-Fail([string]$msg) {
     Write-Host "  xx  $msg" -ForegroundColor Red
 }
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 function Prompt-Choice([string]$question, [string[]]$options) {
     Write-Host ""
     Write-Host "  $question" -ForegroundColor White
@@ -78,66 +78,141 @@ function Download-File([string]$url, [string]$dest) {
     Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
 }
 
-# ── Java ──────────────────────────────────────────────────────────────────────
+# -- Java ----------------------------------------------------------------------
+# Strategy: enumerate EVERY java.exe on the system (PATH, registry, filesystem,
+# JAVA_HOME), probe each one's version, pick the highest that meets the requirement.
+# No silent failures - every candidate is logged. This is the script that the
+# mineblade dashboard uses too, ported from dashboard.py's find_best_java().
 
-# Run java -version using an explicit path or whatever is on PATH.
-function Get-JavaMajorVersion([string]$javaExe = "java") {
+# Run java -version against an explicit path and return the major version int.
+# Java writes -version output to stderr; PowerShell with EAP=Stop treats that
+# as a terminating error, so we force Continue inside this function.
+function Get-JavaMajorVersion([string]$javaExe) {
+    if (-not $javaExe -or -not (Test-Path $javaExe)) { return 0 }
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        $raw = & $javaExe -version 2>&1 | Select-Object -First 1
+        $raw = & $javaExe -version 2>&1 | ForEach-Object { "$_" } | Out-String
         if ($raw -match '"(\d+)') { return [int]$Matches[1] }
-    } catch {}
+    } catch {} finally {
+        $ErrorActionPreference = $prevEap
+    }
     return 0
 }
 
-# Find a java.exe that is installed but not yet on PATH.
-# Checks the Windows registry first (most reliable), then falls back to file scan.
-function Find-NewJavaBin {
-    # Registry: JDK installers always write their path here
+# Find EVERY java.exe on the system. Returns a list of absolute paths.
+function Find-AllJavaExes {
+    $found = New-Object System.Collections.Generic.HashSet[string]
+
+    # 1. Current session PATH
+    $cmd = Get-Command java.exe -ErrorAction SilentlyContinue
+    if ($cmd) { [void]$found.Add($cmd.Source) }
+
+    # 2. System + User PATH from registry (current session may be stale)
+    $regPath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+               [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    foreach ($p in ($regPath -split ";" | Where-Object { $_ })) {
+        $j = Join-Path $p "java.exe"
+        if (Test-Path -LiteralPath $j) { [void]$found.Add((Resolve-Path $j).Path) }
+    }
+
+    # 3. JAVA_HOME in any scope
+    foreach ($scope in @("Machine", "User", "Process")) {
+        $jh = [System.Environment]::GetEnvironmentVariable("JAVA_HOME", $scope)
+        if ($jh) {
+            $j = Join-Path $jh.TrimEnd("\") "bin\java.exe"
+            if (Test-Path -LiteralPath $j) { [void]$found.Add((Resolve-Path $j).Path) }
+        }
+    }
+
+    # 4. Registry: JDK installer keys (Eclipse Adoptium, Microsoft, Oracle, etc.)
     $regBases = @(
         'HKLM:\SOFTWARE\Eclipse Adoptium\JDK',
+        'HKLM:\SOFTWARE\Eclipse Adoptium\JRE',
         'HKLM:\SOFTWARE\Eclipse Foundation\JDK',
         'HKLM:\SOFTWARE\AdoptOpenJDK\JDK',
         'HKLM:\SOFTWARE\JavaSoft\JDK',
-        'HKLM:\SOFTWARE\Microsoft\JDK'
+        'HKLM:\SOFTWARE\JavaSoft\Java Development Kit',
+        'HKLM:\SOFTWARE\Microsoft\JDK',
+        'HKLM:\SOFTWARE\Amazon Corretto',
+        'HKLM:\SOFTWARE\Azul Systems\Zulu'
     )
-    foreach ($regBase in $regBases) {
-        if (-not (Test-Path $regBase)) { continue }
-        $versions = Get-ChildItem $regBase -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+    foreach ($base in $regBases) {
+        if (-not (Test-Path $base)) { continue }
+        $versions = Get-ChildItem -Path $base -ErrorAction SilentlyContinue
         foreach ($ver in $versions) {
-            $msi = Get-ChildItem $ver.PSPath -Recurse -ErrorAction SilentlyContinue |
-                   Where-Object { $_.PSChildName -eq 'MSI' } | Select-Object -First 1
-            if ($msi) {
-                $installPath = (Get-ItemProperty $msi.PSPath -ErrorAction SilentlyContinue).Path
-                if ($installPath) {
-                    $bin = Join-Path $installPath.TrimEnd('\') 'bin'
-                    if (Test-Path (Join-Path $bin 'java.exe')) { return $bin }
+            # Try every plausible subkey layout that vendors use
+            $candidateKeys = @(
+                $ver.PSPath,
+                (Join-Path $ver.PSPath 'hotspot\MSI'),
+                (Join-Path $ver.PSPath 'MSI')
+            )
+            foreach ($key in $candidateKeys) {
+                if (-not (Test-Path $key)) { continue }
+                $props = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+                if (-not $props) { continue }
+                foreach ($propName in @('Path', 'JavaHome', 'InstallationPath')) {
+                    $install = $props.$propName
+                    if ($install -is [string] -and $install.Length -gt 0) {
+                        $j = Join-Path $install.TrimEnd('\') 'bin\java.exe'
+                        if (Test-Path -LiteralPath $j) { [void]$found.Add((Resolve-Path $j).Path) }
+                    }
                 }
             }
         }
     }
 
-    # Fallback: scan common install directories
-    $bases = @(
+    # 5. Brute-force filesystem scan - catches every JDK regardless of how it was installed
+    $scanDirs = @(
         "$env:ProgramFiles\Eclipse Adoptium",
+        "$env:ProgramFiles\Eclipse Foundation",
         "$env:ProgramFiles\Microsoft",
         "$env:ProgramFiles\Java",
         "$env:ProgramFiles\OpenJDK",
-        "$env:ProgramFiles\BellSoft"
+        "$env:ProgramFiles\Zulu",
+        "$env:ProgramFiles\BellSoft",
+        "$env:ProgramFiles\Amazon Corretto",
+        "${env:ProgramFiles(x86)}\Java",
+        "${env:ProgramFiles(x86)}\Eclipse Adoptium",
+        "$env:LOCALAPPDATA\Programs\Eclipse Adoptium",
+        "$env:LOCALAPPDATA\Programs\Microsoft\jdk"
     )
-    foreach ($base in $bases) {
-        if (-not (Test-Path $base)) { continue }
-        $found = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue |
-                 Where-Object { $_.Name -match '^(jdk|jre)' } |
-                 Sort-Object Name -Descending |
-                 Where-Object { Test-Path (Join-Path $_.FullName 'bin\java.exe') } |
-                 Select-Object -First 1
-        if ($found) { return (Join-Path $found.FullName 'bin') }
+    foreach ($base in $scanDirs) {
+        if (-not $base -or -not (Test-Path $base)) { continue }
+        Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            $j = Join-Path $_.FullName 'bin\java.exe'
+            if (Test-Path -LiteralPath $j) { [void]$found.Add((Resolve-Path $j).Path) }
+        }
     }
-    return $null
+
+    return $found
+}
+
+# Pick the highest-version java.exe that meets the minimum requirement.
+# Returns a hashtable @{ Exe = "..."; Version = 26 } or @{ Exe = $null; Version = 0 }.
+function Find-BestJava([int]$minVersion) {
+    $candidates = Find-AllJavaExes
+    if ($candidates.Count -eq 0) {
+        Write-Info "no java.exe found anywhere on the system."
+        return @{ Exe = $null; Version = 0 }
+    }
+
+    Write-Info "scanning $($candidates.Count) java installation(s)..."
+    $bestExe = $null
+    $bestVer = 0
+    foreach ($exe in $candidates) {
+        $v = Get-JavaMajorVersion $exe
+        $mark = if ($v -ge $minVersion) { "ok" } else { "--" }
+        Write-Info "  [$mark] Java $v - $exe"
+        if ($v -ge $minVersion -and $v -gt $bestVer) {
+            $bestExe = $exe
+            $bestVer = $v
+        }
+    }
+    return @{ Exe = $bestExe; Version = $bestVer }
 }
 
 # Ask Mojang what Java version this MC version actually requires.
-# Falls back to 21 if the lookup fails.
 function Get-RequiredJavaVersion([string]$mcVersion) {
     try {
         Write-Info "checking Java requirement for Minecraft $mcVersion..."
@@ -154,6 +229,7 @@ function Get-RequiredJavaVersion([string]$mcVersion) {
     }
 }
 
+# Try to install a Java version via winget. Only tries packages that actually exist.
 function Install-Java([int]$minVersion = 21) {
     Write-Warn "installing Java $minVersion+ via winget..."
     $winget = Get-Command winget -ErrorAction SilentlyContinue
@@ -161,107 +237,68 @@ function Install-Java([int]$minVersion = 21) {
         throw "winget not available. download Java $minVersion+ from https://adoptium.net and re-run."
     }
 
-    $candidates = @()
-    foreach ($v in @(30, 29, 28, 27, 26, 25, 24, 23, 22, 21)) {
-        if ($v -ge $minVersion) { $candidates += "Microsoft.OpenJDK.$v" }
-    }
-    foreach ($v in @(30, 29, 28, 27, 26, 25, 24, 23, 22, 21)) {
-        if ($v -ge $minVersion) { $candidates += "EclipseAdoptium.Temurin.$v.JDK" }
+    # Known-good LTS + current packages. Ordered highest-first so we prefer the newest.
+    # Don't probe future versions that don't exist yet - that just noisily fails.
+    $allCandidates = @(
+        @{ Id = "Microsoft.OpenJDK.25";          Version = 25 },
+        @{ Id = "EclipseAdoptium.Temurin.25.JDK"; Version = 25 },
+        @{ Id = "Microsoft.OpenJDK.21";          Version = 21 },
+        @{ Id = "EclipseAdoptium.Temurin.21.JDK"; Version = 21 },
+        @{ Id = "Microsoft.OpenJDK.17";          Version = 17 },
+        @{ Id = "EclipseAdoptium.Temurin.17.JDK"; Version = 17 }
+    )
+    $candidates = $allCandidates | Where-Object { $_.Version -ge $minVersion }
+
+    if ($candidates.Count -eq 0) {
+        throw "no known winget package provides Java $minVersion+. download from https://adoptium.net"
     }
 
-    $installed = $false
     foreach ($pkg in $candidates) {
-        Write-Info "trying $pkg..."
-        winget install --id $pkg --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
-        # 0 = success, -1978335135 = already installed — both are fine
+        Write-Info "trying $($pkg.Id)..."
+        & winget install --id $pkg.Id --exact --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
+        # 0 = success, -1978335135 = already installed - both are fine
         if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335135) {
-            Write-Ok "$pkg installed."
-            $installed = $true
-            break
+            Write-Ok "$($pkg.Id) installed."
+            return
         }
+        Write-Info "  $($pkg.Id) not available (exit $LASTEXITCODE), trying next..."
     }
-    if (-not $installed) {
-        throw "could not auto-install Java $minVersion+. download from https://adoptium.net and re-run."
-    }
-
-    # Refresh PATH from registry
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("PATH","User")
-
-    # winget PATH updates don't always apply to the current session.
-    # Scan known install locations and inject the bin dir if java is still not found.
-    if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
-        $bin = Find-NewJavaBin
-        if ($bin) {
-            Write-Info "adding $bin to session PATH."
-            $env:PATH = "$bin;$env:PATH"
-        }
-    }
+    throw "could not auto-install Java $minVersion+. download from https://adoptium.net and re-run."
 }
 
-function Resolve-JavaExe {
-    # 1. Current session PATH (fast path)
-    $cmd = Get-Command java -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-
-    # 2. System + User PATH from registry — updated by installers, but stale in current session
-    $sysPaths = (([System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
-                  [System.Environment]::GetEnvironmentVariable("PATH", "User")) -split ";") |
-                 Where-Object { $_ -ne "" }
-    foreach ($p in $sysPaths) {
-        $j = Join-Path $p "java.exe"
-        if (Test-Path $j) {
-            $env:PATH = "$p;$env:PATH"
-            return $j
-        }
-    }
-
-    # 3. JAVA_HOME environment variable
-    foreach ($scope in @("Machine", "User")) {
-        $home = [System.Environment]::GetEnvironmentVariable("JAVA_HOME", $scope)
-        if ($home) {
-            $j = Join-Path $home.TrimEnd("\") "bin\java.exe"
-            if (Test-Path $j) { $env:PATH = "$(Split-Path $j -Parent);$env:PATH"; return $j }
-        }
-    }
-
-    # 4. Registry JDK key scan (last resort)
-    $bin = Find-NewJavaBin
-    if ($bin) { $env:PATH = "$bin;$env:PATH"; return "$bin\java.exe" }
-
-    return $null
-}
+# Global: path to the java.exe that the rest of the script (and the dashboard) should use.
+$script:JavaExe = $null
 
 function Ensure-Java([int]$minVersion = 21) {
     Write-Step "checking Java (need $minVersion+)..."
 
-    $javaExe = Resolve-JavaExe
-    $current  = if ($javaExe) { Get-JavaMajorVersion -javaExe $javaExe } else { 0 }
-
-    if ($current -ge $minVersion) {
-        Write-Ok "Java $current found."
+    # Pass 1: what do we already have?
+    $best = Find-BestJava $minVersion
+    if ($best.Exe) {
+        Write-Ok "Java $($best.Version) ready - $($best.Exe)"
+        $script:JavaExe = $best.Exe
         return
     }
 
-    if ($current -gt 0) {
-        Write-Warn "Java $current found but this server needs $minVersion+. installing correct version..."
-    } else {
-        Write-Warn "Java not found. installing..."
-    }
-
+    # Nothing suitable. Install and re-scan.
+    Write-Warn "no Java $minVersion+ installation found. installing..."
     Install-Java -minVersion $minVersion
 
-    # Re-resolve after install (PATH may have changed or bin was injected)
-    $javaExe = Resolve-JavaExe
-    $current  = if ($javaExe) { Get-JavaMajorVersion -javaExe $javaExe } else { 0 }
+    # Refresh PATH from registry - winget installer just wrote to it
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("PATH","User") + ";" +
+                $env:PATH
 
-    if ($current -lt $minVersion) {
-        throw "Java $minVersion+ still not accessible. restart PowerShell and re-run."
+    # Pass 2: scan again
+    $best = Find-BestJava $minVersion
+    if (-not $best.Exe) {
+        throw "Java $minVersion+ still not found after install. restart PowerShell and re-run."
     }
-    Write-Ok "Java $current ready."
+    Write-Ok "Java $($best.Version) ready - $($best.Exe)"
+    $script:JavaExe = $best.Exe
 }
 
-# ── Version lists ─────────────────────────────────────────────────────────────
+# -- Version lists -------------------------------------------------------------
 function Get-VanillaVersions {
     $manifest = Invoke-RestMethod "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
     return $manifest.versions | Where-Object { $_.type -eq "release" } | Select-Object -First 8
@@ -277,7 +314,7 @@ function Get-FabricVersions {
     return ($data | Where-Object { $_.stable -eq $true } | Select-Object -First 8).version
 }
 
-# ── Server download ───────────────────────────────────────────────────────────
+# -- Server download -----------------------------------------------------------
 function Download-Vanilla([string]$version, [string]$dir) {
     $manifest = Invoke-RestMethod "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
     $entry = $manifest.versions | Where-Object { $_.id -eq $version } | Select-Object -First 1
@@ -300,7 +337,8 @@ function Download-Fabric([string]$version, [string]$dir) {
     $installer = ($installers | Select-Object -First 1).url
     Download-File $installer "$dir\fabric-installer.jar"
     Write-Info "running Fabric installer for $version..."
-    & java -jar "$dir\fabric-installer.jar" server -mcversion $version -downloadMinecraft -dir $dir
+    $javaExe = if ($script:JavaExe) { $script:JavaExe } else { "java" }
+    & $javaExe -jar "$dir\fabric-installer.jar" server -mcversion $version -downloadMinecraft -dir $dir
     Remove-Item "$dir\fabric-installer.jar" -ErrorAction SilentlyContinue
     # Fabric creates fabric-server-launch.jar; rename for dashboard compatibility
     $fabricJar = Get-ChildItem $dir -Filter "fabric-server-launch.jar" | Select-Object -First 1
@@ -317,7 +355,7 @@ function Download-Forge([string]$version, [string]$dir) {
     pause
 }
 
-# ── Server config ─────────────────────────────────────────────────────────────
+# -- Server config -------------------------------------------------------------
 function Write-ServerConfig([string]$dir, [int]$maxPlayers, [int]$ramMb) {
     Set-Content "$dir\eula.txt" "eula=true"
 
@@ -334,7 +372,7 @@ motd=mineblade server
     Write-Ok "server.properties written (port 25565, $maxPlayers players, $($ramMb)MB RAM)"
 }
 
-# ── Firewall ──────────────────────────────────────────────────────────────────
+# -- Firewall ------------------------------------------------------------------
 function Open-Firewall {
     Write-Step "opening firewall port 25565..."
     $existing = Get-NetFirewallRule -DisplayName "Minecraft - mineblade" -ErrorAction SilentlyContinue
@@ -347,7 +385,7 @@ function Open-Firewall {
     }
 }
 
-# ── Dashboard ─────────────────────────────────────────────────────────────────
+# -- Dashboard -----------------------------------------------------------------
 function Install-Dashboard([string]$dir) {
     Write-Step "installing dashboard..."
     $base = "https://raw.githubusercontent.com/OutBlade/mineblade/main/dashboard"
@@ -374,6 +412,7 @@ function Start-Dashboard([string]$dir, [int]$ramMb) {
 
     $env:MINEBLADE_SERVER_DIR = $dir
     $env:MINEBLADE_RAM_MB = $ramMb
+    if ($script:JavaExe) { $env:MINEBLADE_JAVA_EXE = $script:JavaExe }
     Start-Process -FilePath $pythonCmd.Source -ArgumentList "`"$dir\dashboard\dashboard.py`"" `
         -WorkingDirectory $dir -WindowStyle Hidden
     Start-Sleep -Seconds 2
@@ -381,7 +420,7 @@ function Start-Dashboard([string]$dir, [int]$ramMb) {
     Write-Ok "dashboard started. browser opened."
 }
 
-# ── Port forwarding info ──────────────────────────────────────────────────────
+# -- Port forwarding info ------------------------------------------------------
 function Show-PortForwardingInfo {
     Write-Host ""
     Write-Host "  PORT FORWARDING" -ForegroundColor White
@@ -401,9 +440,9 @@ function Show-PortForwardingInfo {
     Write-Host ""
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
-# Refresh session PATH from registry — picks up apps installed after this session started.
+# Refresh session PATH from registry - picks up apps installed after this session started.
 # This is why java installed via winget is invisible until you restart PowerShell.
 $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
             [System.Environment]::GetEnvironmentVariable("PATH","User") + ";" +
@@ -444,7 +483,7 @@ switch ($typeIdx) {
     }
 }
 
-# Java — checked AFTER version selection so we know the exact requirement
+# Java - checked AFTER version selection so we know the exact requirement
 $requiredJava = Get-RequiredJavaVersion $mcVersion
 Ensure-Java -minVersion $requiredJava
 
@@ -452,7 +491,7 @@ Ensure-Java -minVersion $requiredJava
 $totalRamMb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB)
 $suggestedRamMb = [math]::Min([math]::Max([math]::Round($totalRamMb / 2), 1024), 8192)
 Write-Host ""
-Write-Host "  RAM allocation (MB) — you have ${totalRamMb}MB total, suggested: ${suggestedRamMb}MB" -ForegroundColor DarkGray
+Write-Host "  RAM allocation (MB) - you have ${totalRamMb}MB total, suggested: ${suggestedRamMb}MB" -ForegroundColor DarkGray
 $rawRam = Read-Host "    enter MB (or press Enter for $suggestedRamMb)"
 if ([string]::IsNullOrWhiteSpace($rawRam)) { $ramMb = $suggestedRamMb } else { $ramMb = [int]$rawRam }
 
