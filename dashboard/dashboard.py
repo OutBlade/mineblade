@@ -13,17 +13,109 @@ import os
 import re
 import sys
 
-SERVER_DIR = os.environ.get("MINEBLADE_SERVER_DIR", os.path.dirname(os.path.abspath(__file__)) + "/..")
+SERVER_DIR = os.environ.get("MINEBLADE_SERVER_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 RAM_MB     = int(os.environ.get("MINEBLADE_RAM_MB", 2048))
 PORT       = 8080
 
 server_process = None
+last_error     = None
 log_lines      = []
 log_lock       = threading.Lock()
+
+# ── Java discovery ────────────────────────────────────────────────────────────
+
+def _java_version(exe):
+    """Return the major version int of a java executable, or 0 on failure."""
+    try:
+        r = subprocess.run([exe, "-version"], capture_output=True, text=True, timeout=5)
+        m = re.search(r'"(\d+)', r.stderr + r.stdout)
+        return int(m.group(1)) if m else 0
+    except Exception:
+        return 0
+
+def find_best_java():
+    """Return the path to the highest-version java.exe available."""
+    # 1. Explicit override set by setup script
+    from_env = os.environ.get("MINEBLADE_JAVA_EXE", "")
+    if from_env and os.path.isfile(from_env):
+        return from_env
+
+    best_exe     = None
+    best_version = 0
+
+    candidates = []
+
+    if sys.platform == "win32":
+        import winreg
+
+        # Read system PATH from registry (picks up installs done after session start)
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment") as k:
+                sys_path, _ = winreg.QueryValueEx(k, "Path")
+            for p in sys_path.split(";"):
+                j = os.path.join(p, "java.exe")
+                if os.path.isfile(j):
+                    candidates.append(j)
+        except Exception:
+            pass
+
+        # Scan JDK registry keys written by installers
+        reg_roots = [
+            r"SOFTWARE\Eclipse Adoptium\JDK",
+            r"SOFTWARE\Eclipse Foundation\JDK",
+            r"SOFTWARE\AdoptOpenJDK\JDK",
+            r"SOFTWARE\Microsoft\JDK",
+            r"SOFTWARE\JavaSoft\JDK",
+        ]
+        for key_path in reg_roots:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+                    i = 0
+                    while True:
+                        try:
+                            ver_name = winreg.EnumKey(key, i)
+                            i += 1
+                            msi_path = fr"{key_path}\{ver_name}\hotspot\MSI"
+                            try:
+                                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, msi_path) as msi:
+                                    install_path, _ = winreg.QueryValueEx(msi, "Path")
+                                    j = os.path.join(install_path.rstrip("\\"), "bin", "java.exe")
+                                    if os.path.isfile(j):
+                                        candidates.append(j)
+                            except OSError:
+                                pass
+                        except OSError:
+                            break
+            except OSError:
+                pass
+    else:
+        # Mac / Linux: check JAVA_HOME and common paths
+        java_home = os.environ.get("JAVA_HOME", "")
+        if java_home:
+            candidates.append(os.path.join(java_home, "bin", "java"))
+        for p in ["/usr/bin/java", "/usr/local/bin/java"]:
+            if os.path.isfile(p):
+                candidates.append(p)
+
+    # Score every candidate and pick the highest version
+    seen = set()
+    for j in candidates:
+        real = os.path.realpath(j)
+        if real in seen:
+            continue
+        seen.add(real)
+        v = _java_version(j)
+        if v > best_version:
+            best_version = v
+            best_exe = j
+
+    return best_exe or "java"
 
 # ── Process management ────────────────────────────────────────────────────────
 
 def _read_output(proc):
+    global server_process, last_error
     for raw in proc.stdout:
         line = raw.decode("utf-8", errors="replace").rstrip()
         with log_lock:
@@ -31,8 +123,20 @@ def _read_output(proc):
             if len(log_lines) > 600:
                 log_lines.pop(0)
 
+        # Detect Java version mismatch and stop immediately — don't keep retrying
+        if "UnsupportedClassVersionError" in line:
+            m = re.search(r"class file version (\d+)", line)
+            needed = (int(m.group(1)) - 44) if m else "newer"
+            msg = (f"[mineblade] Java is too old for this server. "
+                   f"Need Java {needed}+. Download from https://adoptium.net")
+            _log(msg)
+            last_error = msg
+            proc.kill()
+            server_process = None
+            return
+
 def start_server():
-    global server_process
+    global server_process, last_error
     if server_process and server_process.poll() is None:
         return {"ok": False, "error": "already running"}
 
@@ -40,9 +144,13 @@ def start_server():
     if not os.path.isfile(jar):
         return {"ok": False, "error": "server.jar not found in " + SERVER_DIR}
 
-    _log("[mineblade] starting server...")
+    last_error = None
+    java_exe = find_best_java()
+    java_ver = _java_version(java_exe)
+    _log(f"[mineblade] starting server with Java {java_ver} ({java_exe})...")
+
     server_process = subprocess.Popen(
-        ["java", f"-Xmx{RAM_MB}m", f"-Xms{min(RAM_MB, 1024)}m",
+        [java_exe, f"-Xmx{RAM_MB}m", f"-Xms{min(RAM_MB, 1024)}m",
          "-jar", jar, "--nogui"],
         cwd=SERVER_DIR,
         stdout=subprocess.PIPE,
@@ -82,7 +190,13 @@ def get_status():
             if m:
                 players = int(m.group(1))
                 break
-    return {"running": running, "players": players, "ram_mb": RAM_MB, "server_dir": SERVER_DIR}
+    return {
+        "running":    running,
+        "players":    players,
+        "ram_mb":     RAM_MB,
+        "server_dir": SERVER_DIR,
+        "error":      last_error,
+    }
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
 
@@ -90,11 +204,10 @@ DASH_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
-        pass  # suppress request logs
+        pass
 
     def do_GET(self):
         path = self.path.split("?")[0]
-
         if path in ("/", "/index.html"):
             self._serve_file(os.path.join(DASH_DIR, "index.html"), "text/html")
         elif path == "/api/status":
