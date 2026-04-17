@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOID SURVIVORS — Launcher</title>
+    <meta name="description" content="VOID SURVIVORS - An intense auto-battler survival roguelike. Survive the endless void.">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/launcher.css">
+</head>
+<body>
+    <!-- Title Bar -->
+    <div class="title-bar" id="title-bar">
+        <div class="title-bar-left">
+            <span class="title-bar-icon">◆</span>
+            <span class="title-bar-text">VOID SURVIVORS</span>
+        </div>
+        <div class="title-bar-right">
+            <button class="title-btn" id="btn-minimize">─</button>
+            <button class="title-btn" id="btn-maximize">□</button>
+            <button class="title-btn close" id="btn-close">✕</button>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+            <div class="logo">
+                <div class="logo-diamond">◆</div>
+            </div>
+            <button class="nav-btn active" data-tab="home" title="Home" id="nav-home">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                <span>Home</span>
+            </button>
+            <button class="nav-btn" data-tab="library" title="Library" id="nav-library">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+                <span>Library</span>
+            </button>
+            <button class="nav-btn" data-tab="news" title="News" id="nav-news">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-7 9h-2V5h2v6zm0 4h-2v-2h2v2z"/></svg>
+                <span>News</span>
+            </button>
+            <button class="nav-btn" data-tab="settings" title="Settings" id="nav-settings">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.49.49 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+                <span>Settings</span>
+            </button>
+        </div>
+        <div class="sidebar-bottom">
+            <div class="profile-section" id="profile-section">
+                <div class="profile-avatar">P</div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="content" id="main-content">
+        <!-- Home Tab -->
+        <section class="tab-content active" id="tab-home">
+            <div class="hero-section">
+                <div class="hero-bg">
+                    <canvas id="hero-particles"></canvas>
+                </div>
+                <div class="hero-content">
+                    <div class="hero-badge">AUTO-BATTLER ROGUELIKE</div>
+                    <h1 class="hero-title">VOID<br><span>SURVIVORS</span></h1>
+                    <p class="hero-subtitle">Survive the endless void. Collect weapons. Destroy everything.</p>
+                    <button class="play-btn" id="btn-play">
+                        <span class="play-btn-bg"></span>
+                        <span class="play-btn-text">▶ PLAY</span>
+                        <span class="play-btn-glow"></span>
+                    </button>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat-card" id="stat-card-time">
+                        <div class="stat-value" id="stat-highscore">0:00</div>
+                        <div class="stat-label">Best Time</div>
+                    </div>
+                    <div class="stat-card" id="stat-card-kills">
+                        <div class="stat-value" id="stat-kills">0</div>
+                        <div class="stat-label">Total Kills</div>
+                    </div>
+                    <div class="stat-card" id="stat-card-runs">
+                        <div class="stat-value" id="stat-runs">0</div>
+                        <div class="stat-label">Runs</div>
+                    </div>
+                    <div class="stat-card" id="stat-card-level">
+                        <div class="stat-value" id="stat-maxlevel">0</div>
+                        <div class="stat-label">Max Level</div>
+                    </div>
+                </div>
+            </div>
+            <div class="quick-info">
+                <div class="info-card" id="info-weapons">
+                    <div class="info-icon">⚔️</div>
+                    <h3>6 Weapons</h3>
+                    <p>From Void Whips to Frost Novas</p>
+                </div>
+                <div class="info-card" id="info-enemies">
+                    <div class="info-icon">👾</div>
+                    <h3>5+ Enemy Types</h3>
+                    <p>Each with unique behaviors</p>
+                </div>
+                <div class="info-card" id="info-waves">
+                    <div class="info-icon">🏆</div>
+                    <h3>Endless Waves</h3>
+                    <p>Bosses every 5 minutes</p>
+                </div>
+                <div class="info-card" id="info-upgrades">
+                    <div class="info-icon">⬆️</div>
+                    <h3>Deep Upgrades</h3>
+                    <p>Level up and choose your build</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Library Tab -->
+        <section class="tab-content" id="tab-library">
+            <h2 class="section-title">Your Library</h2>
+            <div class="library-grid">
+                <div class="game-card" id="btn-play-library">
+                    <div class="game-card-art">
+                        <canvas id="card-particles"></canvas>
+                        <div class="game-card-overlay">
+                            <span class="game-card-installed">● INSTALLED</span>
+                        </div>
+                    </div>
+                    <div class="game-card-info">
+                        <h3>VOID SURVIVORS</h3>
+                        <p>Auto-Battler Roguelike</p>
+                        <span class="game-card-size">2.4 MB</span>
+                    </div>
+                </div>
+                <div class="game-card locked" id="card-neon-drift">
+                    <div class="game-card-art locked-art">
+                        <div class="game-card-overlay">
+                            <span class="game-card-coming">COMING SOON</span>
+                        </div>
+                    </div>
+                    <div class="game-card-info">
+                        <h3>NEON DRIFT</h3>
+                        <p>Arcade Racing</p>
+                    </div>
+                </div>
+                <div class="game-card locked" id="card-pixel-fortress">
+                    <div class="game-card-art locked-art">
+                        <div class="game-card-overlay">
+                            <span class="game-card-coming">COMING SOON</span>
+                        </div>
+                    </div>
+                    <div class="game-card-info">
+                        <h3>PIXEL FORTRESS</h3>
+                        <p>Tower Defense</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- News Tab -->
+        <section class="tab-content" id="tab-news">
+            <h2 class="section-title">News & Updates</h2>
+            <div class="news-feed" id="news-feed">
+                <article class="news-item featured" id="news-1">
+                    <div class="news-badge">NEW</div>
+                    <div class="news-date">April 16, 2026</div>
+                    <h3>🚀 VOID SURVIVORS v1.0 Launch!</h3>
+                    <p>The void awaits! VOID SURVIVORS is now available. Features include 6 unique weapons, 5 enemy types, epic boss battles, and an endless upgrade system. How long can you survive?</p>
+                    <div class="news-tags">
+                        <span class="tag">Release</span>
+                        <span class="tag">Major Update</span>
+                    </div>
+                </article>
+                <article class="news-item" id="news-2">
+                    <div class="news-date">April 15, 2026</div>
+                    <h3>⚡ Balance Patch 0.9.5</h3>
+                    <p>Lightning Bolt damage increased by 15%. Frost Nova cooldown reduced. Zombie spawn rate slightly decreased in early waves. Ghost phase duration adjusted.</p>
+                    <div class="news-tags">
+                        <span class="tag">Balance</span>
+                    </div>
+                </article>
+                <article class="news-item" id="news-3">
+                    <div class="news-date">April 12, 2026</div>
+                    <h3>🎮 New Weapon: Shadow Daggers</h3>
+                    <p>Rapid-fire projectiles that seek out the nearest enemy. Upgrades increase projectile count and add piercing. Available as a level-up reward.</p>
+                    <div class="news-tags">
+                        <span class="tag">Content</span>
+                        <span class="tag">Weapons</span>
+                    </div>
+                </article>
+                <article class="news-item" id="news-4">
+                    <div class="news-date">April 8, 2026</div>
+                    <h3>🏆 Boss System Overhaul</h3>
+                    <p>The Void Lord now has 3 attack patterns! Defeating a boss grants a guaranteed legendary upgrade. Boss HP scales with time survived.</p>
+                    <div class="news-tags">
+                        <span class="tag">Feature</span>
+                        <span class="tag">Boss</span>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <!-- Settings Tab -->
+        <section class="tab-content" id="tab-settings">
+            <h2 class="section-title">Settings</h2>
+            <div class="settings-grid">
+                <div class="settings-group" id="settings-audio">
+                    <h3 class="settings-group-title">🔊 Audio</h3>
+                    <div class="setting-row">
+                        <label for="setting-master-vol">Master Volume</label>
+                        <div class="setting-control">
+                            <input type="range" min="0" max="100" value="70" id="setting-master-vol">
+                            <span class="setting-value" id="val-master-vol">70%</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <label for="setting-sfx-vol">SFX Volume</label>
+                        <div class="setting-control">
+                            <input type="range" min="0" max="100" value="80" id="setting-sfx-vol">
+                            <span class="setting-value" id="val-sfx-vol">80%</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <label for="setting-music-vol">Music Volume</label>
+                        <div class="setting-control">
+                            <input type="range" min="0" max="100" value="50" id="setting-music-vol">
+                            <span class="setting-value" id="val-music-vol">50%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-group" id="settings-gameplay">
+                    <h3 class="settings-group-title">🎮 Gameplay</h3>
+                    <div class="setting-row">
+                        <label for="setting-screenshake">Screen Shake</label>
+                        <div class="setting-control">
+                            <label class="toggle">
+                                <input type="checkbox" checked id="setting-screenshake">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <label for="setting-dmgnumbers">Damage Numbers</label>
+                        <div class="setting-control">
+                            <label class="toggle">
+                                <input type="checkbox" checked id="setting-dmgnumbers">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <label for="setting-particles">Particles</label>
+                        <div class="setting-control">
+                            <select id="setting-particles">
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-group" id="settings-controls">
+                    <h3 class="settings-group-title">⌨️ Controls</h3>
+                    <div class="controls-display">
+                        <div class="control-row"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or <kbd>↑</kbd> <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd> <span class="control-desc">Move</span></div>
+                        <div class="control-row"><kbd>ESC</kbd> <span class="control-desc">Pause / Resume</span></div>
+                        <div class="control-row"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <span class="control-desc">Select Upgrade</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">VOID SURVIVORS</div>
+            <div class="loading-bar-container">
+                <div class="loading-bar" id="loading-bar"></div>
+            </div>
+            <div class="loading-text" id="loading-text">Initializing void engine...</div>
+        </div>
+    </div>
+
+    <script src="js/launcher.js"></script>
+</body>
+</html>

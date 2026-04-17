@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOID SURVIVORS</title>
+    <meta name="description" content="VOID SURVIVORS - Survive the endless void. Auto-battler roguelike survival game.">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+    <!-- Character Select Screen -->
+    <div class="screen active" id="screen-charselect">
+        <div class="screen-bg"></div>
+        <div class="charselect-content">
+            <h1 class="charselect-title">CHOOSE YOUR SURVIVOR</h1>
+            <div class="char-grid" id="char-grid">
+                <div class="char-card" data-class="warrior" id="char-warrior">
+                    <div class="char-preview warrior-preview"></div>
+                    <div class="char-info">
+                        <h3>WARRIOR</h3>
+                        <p>High HP, Void Whip</p>
+                        <div class="char-stats-row">
+                            <span class="cs">❤️ 120</span>
+                            <span class="cs">⚡ 180</span>
+                            <span class="cs">🛡️ 2</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="char-card" data-class="mage" id="char-mage">
+                    <div class="char-preview mage-preview"></div>
+                    <div class="char-info">
+                        <h3>MAGE</h3>
+                        <p>Area damage, Lightning</p>
+                        <div class="char-stats-row">
+                            <span class="cs">❤️ 80</span>
+                            <span class="cs">⚡ 200</span>
+                            <span class="cs">🛡️ 0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="char-card" data-class="rogue" id="char-rogue">
+                    <div class="char-preview rogue-preview"></div>
+                    <div class="char-info">
+                        <h3>ROGUE</h3>
+                        <p>Fast, Shadow Daggers</p>
+                        <div class="char-stats-row">
+                            <span class="cs">❤️ 90</span>
+                            <span class="cs">⚡ 260</span>
+                            <span class="cs">🛡️ 0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="char-card" data-class="cleric" id="char-cleric">
+                    <div class="char-preview cleric-preview"></div>
+                    <div class="char-info">
+                        <h3>CLERIC</h3>
+                        <p>Heals over time, Spirit Orbs</p>
+                        <div class="char-stats-row">
+                            <span class="cs">❤️ 100</span>
+                            <span class="cs">⚡ 190</span>
+                            <span class="cs">🛡️ 1</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <a href="../launcher/index.html" class="back-link" id="btn-back-charselect">← Back to Launcher</a>
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD Overlay -->
+    <div class="hud" id="hud" style="display:none;">
+        <div class="hud-top">
+            <div class="hud-left">
+                <div class="hp-bar-container" id="hp-bar-container">
+                    <div class="hp-bar" id="hp-bar"></div>
+                    <span class="hp-text" id="hp-text">100 / 100</span>
+                </div>
+                <div class="xp-bar-container" id="xp-bar-container">
+                    <div class="xp-bar" id="xp-bar"></div>
+                    <span class="xp-text" id="xp-text">Lv. 1</span>
+                </div>
+            </div>
+            <div class="hud-center">
+                <div class="timer" id="timer">0:00</div>
+            </div>
+            <div class="hud-right">
+                <div class="hud-stat" id="hud-kills">
+                    <span class="hud-stat-icon">💀</span>
+                    <span class="hud-stat-val" id="kill-count">0</span>
+                </div>
+            </div>
+        </div>
+        <div class="hud-bottom">
+            <div class="weapon-slots" id="weapon-slots"></div>
+        </div>
+    </div>
+
+    <!-- Level Up Modal -->
+    <div class="modal" id="modal-levelup" style="display:none;">
+        <div class="modal-bg"></div>
+        <div class="modal-content levelup-content">
+            <h2 class="levelup-title">LEVEL UP!</h2>
+            <p class="levelup-subtitle" id="levelup-level">Choose an upgrade</p>
+            <div class="upgrade-cards" id="upgrade-cards"></div>
+        </div>
+    </div>
+
+    <!-- Pause Modal -->
+    <div class="modal" id="modal-pause" style="display:none;">
+        <div class="modal-bg"></div>
+        <div class="modal-content pause-content">
+            <h2 class="pause-title">PAUSED</h2>
+            <button class="menu-btn" id="btn-resume">▶ Resume</button>
+            <button class="menu-btn secondary" id="btn-quit">✕ Quit to Launcher</button>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div class="screen" id="screen-gameover" style="display:none;">
+        <div class="screen-bg"></div>
+        <div class="gameover-content">
+            <h1 class="gameover-title">VOID CONSUMED</h1>
+            <div class="gameover-stats" id="gameover-stats">
+                <div class="go-stat"><span class="go-label">Time Survived</span><span class="go-value" id="go-time">0:00</span></div>
+                <div class="go-stat"><span class="go-label">Enemies Killed</span><span class="go-value" id="go-kills">0</span></div>
+                <div class="go-stat"><span class="go-label">Level Reached</span><span class="go-value" id="go-level">1</span></div>
+                <div class="go-stat"><span class="go-label">Weapons</span><span class="go-value" id="go-weapons">1</span></div>
+            </div>
+            <div class="gameover-buttons">
+                <button class="menu-btn" id="btn-retry">↻ Play Again</button>
+                <button class="menu-btn secondary" id="btn-launcher">← Launcher</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screen Flash Effect -->
+    <div class="screen-flash" id="screen-flash"></div>
+
+    <script src="js/audio.js"></script>
+    <script src="js/particles.js"></script>
+    <script src="js/upgrades.js"></script>
+    <script src="js/weapons.js"></script>
+    <script src="js/enemies.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>
