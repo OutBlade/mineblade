@@ -546,6 +546,23 @@ if ([string]::IsNullOrWhiteSpace($rawRam)) { $ramMb = $suggestedRamMb } else { $
 $rawPlayers = Read-Host "  max players (Enter for 20)"
 if ([string]::IsNullOrWhiteSpace($rawPlayers)) { $maxPlayers = 20 } else { $maxPlayers = [int]$rawPlayers }
 
+# Clean old server/world data so a server-type switch doesn't cause crashes.
+# Paper/Fabric can't load a level.dat created by Vanilla (and vice-versa).
+$oldJar = Join-Path $serverDir "server.jar"
+if (Test-Path $oldJar) {
+    Write-Step "cleaning old server data..."
+    foreach ($item in @("world", "world_nether", "world_the_end",
+                        "server.jar", "level.dat", "session.lock",
+                        "libraries", "versions", "bundler",
+                        "fabric-server-launch.jar", "fabric-server-launcher.properties")) {
+        $path = Join-Path $serverDir $item
+        if (Test-Path $path) {
+            Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Info "removed $item"
+        }
+    }
+}
+
 # Download
 Write-Step "downloading $mcVersion server..."
 switch ($typeIdx) {
@@ -559,6 +576,22 @@ Write-Ok "server downloaded."
 # Configure
 Write-ServerConfig $serverDir $maxPlayers $ramMb
 
+# Start script for convenient re-launch without re-running setup
+Write-Step "writing start script..."
+$javaPath = if ($script:JavaExe) { $script:JavaExe } else { "java" }
+$startBat = @"
+@echo off
+cd /d "%~dp0"
+start "" "dashboard\dashboard.py"
+timeout /t 2 /nobreak >nul
+start http://localhost:8080
+echo mineblade: dashboard opened at http://localhost:8080
+echo press any key to close this window...
+pause >nul
+"@
+Set-Content -Path "$serverDir\start.bat" -Value $startBat -Encoding ASCII
+Write-Ok "start.bat written (double-click to launch)"
+
 # Firewall
 Open-Firewall
 
@@ -570,5 +603,6 @@ Start-Dashboard $serverDir $ramMb
 Show-PortForwardingInfo
 
 Write-Host "  all done. manage your server at http://localhost:8080" -ForegroundColor Green
+Write-Host "  to start again later, double-click start.bat in $serverDir" -ForegroundColor DarkGray
 Write-Host ""
 Read-Host "  Press Enter to close"

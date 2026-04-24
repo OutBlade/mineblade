@@ -335,6 +335,20 @@ RAM_MB=${RAW_RAM:-$SUGGESTED_MB}
 read -rp "  max players (Enter for 20): " RAW_PLAYERS
 MAX_PLAYERS=${RAW_PLAYERS:-20}
 
+# Clean old server/world data so a server-type switch doesn't crash
+if [[ -f "$SERVER_DIR/server.jar" ]]; then
+  step "cleaning old server data..."
+  for item in world world_nether world_the_end \
+              server.jar level.dat session.lock \
+              libraries versions bundler \
+              fabric-server-launch.jar fabric-server-launcher.properties; do
+    if [[ -e "$SERVER_DIR/$item" ]]; then
+      rm -rf "$SERVER_DIR/$item"
+      info "removed $item"
+    fi
+  done
+fi
+
 step "downloading $MC_VERSION server..."
 case $TYPE_IDX in
   0) download_vanilla "$MC_VERSION" "$SERVER_DIR" ;;
@@ -345,9 +359,35 @@ esac
 ok "server downloaded."
 
 write_server_config "$SERVER_DIR" "$MAX_PLAYERS"
+
+# Start script for convenient re-launch
+step "writing start script..."
+cat > "$SERVER_DIR/start.sh" <<'STARTEOF'
+#!/usr/bin/env bash
+cd "$(dirname "$0")"
+py=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
+if [[ -z "$py" ]]; then
+  echo "Python not found. Install Python 3 and re-run."
+  exit 1
+fi
+export MINEBLADE_SERVER_DIR="$(pwd)"
+"$py" dashboard/dashboard.py &
+sleep 2
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  open "http://localhost:8080"
+else
+  xdg-open "http://localhost:8080" 2>/dev/null || true
+fi
+echo "mineblade: dashboard at http://localhost:8080 (press Ctrl+C to stop)"
+wait
+STARTEOF
+chmod +x "$SERVER_DIR/start.sh"
+ok "start.sh written (run ./start.sh to launch)"
+
 install_dashboard "$SERVER_DIR"
 start_dashboard "$SERVER_DIR" "$RAM_MB"
 show_port_forwarding
 
 echo -e "  ${GREEN}all done.${NC} manage your server at http://localhost:8080"
+echo -e "  ${DIM}to start again later: cd $SERVER_DIR && ./start.sh${NC}"
 echo ""
