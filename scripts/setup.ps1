@@ -364,7 +364,7 @@ server-port=25565
 max-players=$maxPlayers
 difficulty=normal
 gamemode=survival
-online-mode=true
+online-mode=false
 enable-rcon=false
 motd=mineblade server
 "@
