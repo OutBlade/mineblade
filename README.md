@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="assets/logo.svg" width="480" alt="mineblade"/>
+<img src="assets/logo.png" width="480" alt="mineblade"/>
 
 <br/>
 
