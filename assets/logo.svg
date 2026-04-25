@@ -2,8 +2,9 @@
   <rect width="560" height="160" fill="#000"/>
   <defs>
     <clipPath id="blade-cut">
-      <polygon points="0,0 560,0 560,88 440,72 0,80"/>
-      <polygon points="0,100 320,92 560,108 560,160 0,160"/>
+      <polygon points="0,0 560,0 560,68 0,76"/>
+      <polygon points="0,80 560,72 560,92 0,100"/>
+      <polygon points="0,104 560,96 560,160 0,160"/>
     </clipPath>
   </defs>
   <text
