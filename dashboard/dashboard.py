@@ -186,6 +186,17 @@ def stop_server():
     server_process = None
     return {"ok": True}
 
+def send_command(cmd):
+    if not server_process or server_process.poll() is not None:
+        return {"ok": False, "error": "server not running"}
+    try:
+        server_process.stdin.write((cmd + "\n").encode("utf-8"))
+        server_process.stdin.flush()
+        _log(f"> {cmd}")
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 def _log(msg):
     with log_lock:
         log_lines.append(msg)
@@ -231,6 +242,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(start_server())
         elif path == "/api/stop":
             self._json(stop_server())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        if path == "/api/command":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            try:
+                data = json.loads(body)
+                cmd = data.get("command", "").strip()
+            except Exception:
+                cmd = ""
+            if not cmd:
+                self._json({"ok": False, "error": "empty command"})
+                return
+            self._json(send_command(cmd))
         else:
             self.send_response(404)
             self.end_headers()
